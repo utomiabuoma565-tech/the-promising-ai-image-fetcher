@@ -1,45 +1,43 @@
 # The Promising AI Image Fetcher
 
-A small remote MCP server for Claude. Its only job is to fetch a **direct public image URL** and return the original image bytes as MCP image content. It does not create ZIP files and does not crawl webpages.
+A small remote MCP server for Claude-compatible MCP clients. It provides one tool:
 
-## What it supports
+- `fetch_image(url)` downloads a direct, publicly reachable image URL and returns the image as MCP image content.
 
-- Direct public `http://` and `https://` image links
-- Redirects to the final image URL
-- PNG, JPEG, GIF, and WebP
-- Original image bytes (no resizing or recompression)
-- 20 MB per-image limit
-- Blocks private/local network destinations
+It supports PNG, JPEG, WebP, and GIF. The per-image limit is 20 MiB. It follows up to five redirects and blocks URLs that resolve to private, local, or reserved IP addresses.
+
+**This service only fetches and returns images. It does not scrape web pages, create ZIP files, or store downloads.** Claude would need to create any ZIP archive separately.
 
 ## Deploy on Render
 
-1. Create a GitHub repository and upload every file in this folder.
-2. In Render, choose **New → Blueprint** and connect that repository.
-3. Render reads `render.yaml` and creates the web service.
-4. Wait for deployment to finish. Your service URL will look like `https://YOUR-SERVICE.onrender.com`.
-5. The MCP endpoint is normally `https://YOUR-SERVICE.onrender.com/mcp`.
+1. Upload the contents of this folder to the root of a GitHub repository.
+2. In Render, choose **New → Blueprint** and select that repository.
+3. Select branch `main` and Blueprint file `render.yaml`.
+4. Review the service and deploy it.
+5. Wait until the web service status is **Live**. The MCP endpoint is the Render service URL followed by `/mcp`.
 
-Free Render services may sleep when inactive, so the first request after inactivity can take a little time.
+Render uses the `PORT` environment variable. The server binds to `0.0.0.0` and uses that port.
 
-## Connect to Claude Web
+## Connect to an MCP client
 
-In Claude, open **Settings → Connectors → Add custom connector** (the exact labels can vary by account/UI). Give it the name `The Promising AI Image Fetcher` and use the MCP server URL:
+Use the service endpoint:
 
-`https://YOUR-SERVICE.onrender.com/mcp`
+`https://YOUR-RENDER-SERVICE.onrender.com/mcp`
 
-Complete the connection flow. If Claude asks for authentication, this starter does not implement user authentication; do not expose it publicly for sensitive/private image sources. Only use public image URLs.
+The exact connection flow depends on the MCP client. Use the remote MCP / Streamable HTTP option.
 
-## Use it
+## Important compatibility note
 
-Ask Claude to use `fetch_image` on each direct image URL you provide. The tool returns the image itself as MCP image content, not just a URL.
+This project uses `mcp.server.fastmcp.FastMCP` from MCP SDK v1. The requirements file deliberately pins the dependency below v2 because v2 renamed/reworked this API. In SDK v1, `host`, `port`, and `stateless_http` are configured in the `FastMCP(...)` constructor; `run()` receives only the transport here. This avoids the `FastMCP.run() got an unexpected keyword argument 'host'` error.
 
-Example instruction:
+## Important end-to-end limitation
 
-"Use The Promising AI Image Fetcher to retrieve each of these direct image URLs. After receiving the image content, create one ZIP containing the original image files. Keep the original file quality and report any URLs that fail."
+The MCP tool returns an MCP **image content block**. A client may display or interpret that image without exposing the original binary bytes to the model's file-creation feature. Therefore, a successful Render deployment does **not** by itself prove that Claude can package the exact original downloaded bytes into a ZIP. Test that workflow in Claude before relying on it. This server does not create ZIP files.
 
-## Important limitations and testing
+## Security and operating notes
 
-- This starter accepts only links that return an image directly. It will reject ordinary webpages containing embedded images.
-- The MCP protocol supports image content, but whether Claude's current connector UI passes that content through in a way that lets Claude package the original binary bytes into a ZIP must be tested. Image understanding/display is not necessarily the same as binary-file access.
-- This starter has not yet been deployed or tested against your specific image links. Some hosts block automated requests, require cookies/login, or use anti-bot protection.
-- For production use, add authentication, rate limiting, robust DNS pinning/SSRF protection, and tests before exposing the service broadly.
+- This is intended for direct public image URLs, not private/authenticated image hosts.
+- Do not add credentials or secrets to image URLs.
+- The service is publicly reachable unless you add authentication or network restrictions. Avoid using it as a general-purpose proxy.
+- DNS checks reduce SSRF risk but cannot guarantee protection against every DNS-rebinding or network-level edge case.
+- Render's free service may spin down when idle, so the first request after inactivity can take longer.
